@@ -6,10 +6,12 @@ import getopt, sys, os
 from hashlib import blake2b
 
 DEBUG = False
+BLOCK_SIZE = 64  # max 64 bytes
+SECRET = "1234567812345678123456781234567812345678123456781234567812345678"  # max 64 bytes
 
 
 def parse_keys(ks):
-    return ks.split("-")
+    return ks.split(" ")
 
 
 def split(data):
@@ -30,11 +32,81 @@ k = key
 
 Returns hash
 """
-def encode_function(s, k):
-    h = blake2b(key=k.encode(), digest_size=16)
 
-    h.update(s.encode())
-    return h.hexdigest()
+"""
+>>> from Crypto.Cipher import AES
+>>> from Crypto import Random
+>>>
+>>> key = b'Sixteen byte key'
+>>> iv = Random.new().read(AES.block_size)
+>>> cipher = AES.new(key, AES.MODE_CFB, iv)
+>>> msg = iv + cipher.encrypt(b'Attack at dawn')
+"""
+def encode_function(s, k):
+    if len(k) > 64:
+        print("Error encoding function: key length > 64 bytes")
+        exit()
+
+    if len(s) < 1:
+        print("Error encoding function: string length < 1 byte")
+        exit()
+
+    result = ""  ## String after encoding/decoding
+
+    # Split into BLOCK_SIZE'd blocks
+    data = split_blocks(s, BLOCK_SIZE)
+    data[-1] = pad_block(data[-1], BLOCK_SIZE, " ")
+
+    # Ensure: 0 < key length < 64 (bytes)
+    key = k.encode()
+    for block in data:
+        # Enure: block length == 64 bytes
+        b_data = block.encode()  ## block data in byte format
+
+        b_salt = create_salt(b_data)
+
+        h = blake2b(key=key, salt=b_salt, digest_size=BLOCK_SIZE)
+        h.update(b_data)
+
+        result += str(h.digest())  # hexdigest()?
+
+    return result
+
+
+"""
+Create salt using SECRET key and a string.
+"""
+def create_salt(s):
+    if len(s) != 64:
+        print("Error creating salt: string != 64 bytes")
+        exit()
+    if 0 >= len(SECRET) > 64:
+        print("Error creating salt: length of SECRET must larger than 0 and "
+              "less than 64")
+        exit()
+    salt = blake2b(key=SECRET.encode(), digest_size=16)
+    salt.update(s)
+    salt = salt.digest()
+    return salt
+
+
+"""
+Splits string into blocks of size n
+"""
+def split_blocks(s, n):
+    return [s[i: i + n] for i in range(0, len(s), n)]
+
+
+"""
+Pads string b with character c to size n
+"""
+def pad_block(b, n, c):
+    last_block_size = len(b)
+    if last_block_size != n:
+        for i in range(last_block_size + 1, n):
+            b += c
+    return b
+
 
 
 """
@@ -65,7 +137,11 @@ def encode(data, keys):
     for key in keys:
         if DEBUG:
             print(key + "->" + s[0])
-        s[0] = xor_string(s[0], encode_function(s[1], key))
+
+        # Ensure: len(f) == len(s[1]); ie. returns the same length string
+        f = encode_function(s[1], key)
+        # Ensure: s[0] = XOR s[0], f
+        s[0] = xor_string(s[0], f)
         s[0], s[1] = s[1], s[0]
 
     if DEBUG:
@@ -91,7 +167,10 @@ def decode(data, keys):
     for key in keys:
         if DEBUG:
             print(key + "->" + s[0])
-        s[0] = xor_string(s[0], encode_function(s[1], key))
+        # Ensure: len(f) == len(s[1]); ie. returns the same length string
+        f = encode_function(s[1], key)
+        # Ensure: s[0] = XOR s[0], f
+        s[0] = xor_string(s[0], f)
         s[0], s[1] = s[1], s[0]
 
     return s[1] + s[0]
@@ -186,15 +265,6 @@ def usage_error(reason):
 
 """
 Displays correct way to use input for program
-
--h/--help: usage()
---esrc: raw code to encode
---dsrc: raw code to decode
---epath: path to encode source.txt
---dpath: path to encode source.txt
---ksrc: raw keys in format k1-k2- ... -kn
---kpath: path to keys.txt
---dst: path where result is saved
 """
 def usage():
     # print("Usage: feistel-cipher.py -[e|d] <file.txt> -s")
@@ -203,6 +273,9 @@ def usage():
           "--[ksrc/kpath] "
           "--dst"
           "-h --help")
+
+def help():
+    print("HELP PLACEHOLDER")
 
 
 if __name__ == '__main__':
@@ -221,7 +294,7 @@ if __name__ == '__main__':
 
     for o, a in opts:
         if o in ("-h", "--help"):
-            usage()
+            help()
             exit()
         elif o == "--esrc":
             eSrc = a
