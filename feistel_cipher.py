@@ -184,9 +184,6 @@ def encode(data, keys):
     s = split(data)  ## Split cleartext into two equal size pieces
 
     for key in keys:
-        if DEBUG:
-            print(key + "->" + s[0])
-
         # Ensure: len(f) == len(s[1]); ie. returns the same length string
         f = encode_function(s[1], key)
         # Ensure: s[0] = XOR s[0], f
@@ -194,10 +191,6 @@ def encode(data, keys):
         s[0], s[1] = s[1], s[0]
 
     cipher = s[1] + s[0]
-
-    if DEBUG:
-        print(cipher)
-
     return cipher
 
 
@@ -213,7 +206,6 @@ Similar to encode function, but keys are reversed.
 """
 def decode(data, keys):
     s = split(data)  ## Split cipher into two equal size pieces
-
     keys.reverse()
 
     for key in keys:
@@ -230,7 +222,6 @@ def decode(data, keys):
     # If cleartext ends with a space, it was unbalanced before: Remove padding
     if cleartext[-1] == PADDING:
         cleartext = cleartext[:-1]
-
     return cleartext
 
 
@@ -255,7 +246,6 @@ def get_source_txt(f_path):
 @param data, String containing data to be written to <destination>.txt
 """
 def set_textfile(f_path, data):
-
     if os.path.exists(f_path):
         while True:
             res = input(
@@ -286,12 +276,12 @@ def usage_error(reason):
 Prints correct way to input arguments for program.
 """
 def usage():
-    # print("Usage: feistel-cipher.py -[e|d] <file.txt> -s")
     print("Usage: feistel_cipher.py "
-          "--[esrc/dsrc/epath/dpath] "
-          "--[ksrc/kpath] "
-          "--dst"
-          "-h --help")
+          "[-h|--help] "
+          "-[e|d] "
+          "[-s <source> | --src <source.txt>] "
+          "[-k <keys> | --ksrc <keys.txt>] "
+          "--dst <destination.txt>")
 
 
 """
@@ -302,82 +292,96 @@ def help():
 
 
 if __name__ == '__main__':
-    eSrc, dSrc, ePath, dPath, kSrc, kPath, dst = '', '', '', '', '', '', ''
+    encoding, decoding = False, False
+    s, src, k, ksrc, dst = '', '', '', '', ''
     opts = []
 
     # Parse arguments
     try:
         opts, args = getopt.getopt(
-            sys.argv[1:], "h",
-            ["help", "esrc=", "dsrc=", "epath=", "dpath=", "ksrc=", "kpath=", "dst="]
+            sys.argv[1:], "heds:k:",
+            ["help", "src=", "ksrc=", "dst="]
         )
     except getopt.GetoptError as err:
         print(err)
         exit(1)
 
+    # TODO check valid characters?
     for o, a in opts:
         if o in ("-h", "--help"):
             help()
             exit()
-        elif o == "--esrc":
-            eSrc = a
-        elif o == "--dsrc":
-            dSrc = a
-        elif o == "--epath":
-            ePath = a
-        elif o == "--dpath":
-            dPath = a
+        elif o == "-e":
+            encoding = True
+        elif o == "-d":
+            decoding = True
+        elif o == "-s":
+            s = a
+        elif o == "--src":
+            src = a
+        elif o == "-k":
+            k = a
         elif o == "--ksrc":
-            kSrc = a
-        elif o == "--kpath":
-            kPath = a
+            ksrc = a
         elif o == "--dst":
             dst = a
         else:
             usage_error("Argument not recognised")
 
-    # Handle wrong arguments
-    if (eSrc and dSrc) or (ePath and dPath):
-        usage_error("Cannot encode and decode at the same time.")
-    if (eSrc and ePath) or (dSrc and dPath):
-        usage_error("Cannot provide source and path.")
-    if kSrc and kPath:
-        usage_error("Cannot provide key source and key path.")
-    if not (eSrc or ePath or dSrc or dPath):
-        usage_error("No encoding or decoding provided.")
+    if not (encoding or decoding):
+        usage()
+        exit()
 
-    # Get keys
-    keys = ''
-    if kPath:
-        keys = get_source_txt(kPath)
+    # Check works
+    if not (encoding ^ decoding):
+        print("Provide either encoding or decoding.")
+        exit()
+
+    if not (s or src):
+        print("Provide source.")
+        exit()
+    elif s and src:
+        print("Provide either s or src, not both.")
+        exit()
+
+    if not (k or ksrc):
+        print("Provide keys.")
+        exit()
+    elif k and ksrc:
+        print("Provide either k or ksrc, not both.")
+        exit()
+
+    # Get keys as string
+    keys = ""
+    if ksrc:
+        # Check validity
+        keys = get_source_txt(ksrc)
         keys = keys.splitlines()
-    elif kSrc:
-        keys = parse_keys(kSrc)
     else:
-        usage_error("No keys provided.")
+        # Check validity
+        keys = k.split(KEY_SPLIT)
 
-    # Encode cipher
-    if ePath:
-        if ePath[-4:] != ".txt":
-            usage_error(f'file: {ePath} must be a .txt file')
-        eSrc = get_source_txt(ePath)
+    # Get source as string
+    if src:
+        if src[-4:] != ".txt":
+            usage_error(f'file: {src} must be a .txt file')
+        s = get_source_txt(src)
 
-    if eSrc:
-        cipher = encode(eSrc, keys)
-        print(cipher)
-        if dst:
-            set_textfile(dst, cipher)
-            exit()
+    # Encode or decode
+    result = ""
+    if encoding and s:
+        result = encode(s, keys)
+    elif decoding and s:
+        result = decode(s, keys)
+    else:
+        # Should never reach here
+        exit()
 
-    if dPath:
-        if dPath[-4:] != ".txt":
-            usage_error(f'file: {dPath} must be a .txt file')
-        dSrc = get_source_txt(dPath)
+    # If dst provied: Save results in <dst>.txt
+    # Check validity
+    if dst:
+        set_textfile(dst, result)
+    else:
+        print("Result=" + result)
 
-    if dSrc:
-        cleartext = decode(dSrc, keys)
-        print(cleartext)
-        if dst:
-            set_textfile(dst, cleartext)
-            exit()
     exit()

@@ -1,9 +1,10 @@
-from feistel_cipher import feistel_cipher as fc
+import feistel_cipher as fc
 import unittest
 
 KEYS = [
     ["qwertyuiop", "1234567890", "asdfghjkl"],
     ["1122334455, 6677889900"], ["123", "234"],
+    ["123", "234", "345", "456", "567", "678", "789", "890"],
     ["123", "234", "345", "456", "567", "678", "789", "890"],
 ]
 
@@ -14,9 +15,38 @@ CLEARTEXT = [
     "Milk Chocolate with Roasted Chopped Hazelnuts.\n 12323424"
     "Ingredients: Sugar, Cocoa Butter, Dried Whole Milk, Cocoa "
     "Mass, Chopped Hazelnuts (10%), Whey Powder (Milk)",
+    "What is Lorem Ipsum?\n"
+    "Lorem Ipsum is simply dummy text of the printing and typesetting "
+    "industry. Lorem Ipsum has been the industry's \nstandard dummy text ever "
+    "since the 1500s, when an unknown printer took a galley of type and "
+    "scrambled it to \nmake a type specimen book. It has survived not only "
+    "five centuries, but also the leap into electronic \ntypesetting, remaining "
+    "essentially unchanged. It was popularised in the 1960s with the release "
+    "of Letraset \nsheets containing Lorem Ipsum passages, and more recently "
+    "with desktop publishing software like Aldus PageMaker \nincluding versions "
+    "of Lorem Ipsum."
 ]
 
 class FeistelCipherTestCase(unittest.TestCase):
+
+    def test_get_source_txt(self):
+        self.maxDiff = None
+
+        s1 = CLEARTEXT[4]
+        s2 = fc.get_source_txt("resources\\text1.txt")
+        self.assertEqual(s1, s2)
+
+        cipher1 = fc.encode(s1, KEYS[0])
+        cipher2 = fc.encode(s2, KEYS[1])
+        print(f"\tcipher1 len[{len(cipher1)}]=" + cipher1)
+        print(f"\tcipher2 len[{len(cipher2)}]=" + cipher2)
+        cleartext1 = fc.decode(cipher1, KEYS[0])
+        cleartext2 = fc.decode(cipher2, KEYS[1])
+        print(f"\tcleartext1 len[{len(cleartext1)}]=" + cleartext1)
+        print(f"\tcleartext2 len[{len(cleartext2)}]=" + cleartext2)
+        self.assertEqual(s1, cleartext1)
+        self.assertEqual(s2, cleartext2)
+
 
     def test_encode(self):
         for i in range(0, len(CLEARTEXT)):
