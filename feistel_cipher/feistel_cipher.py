@@ -7,129 +7,178 @@ from hashlib import blake2b
 
 DEBUG = False
 BLOCK_SIZE = 64  # max 64 bytes
+SALT_SIZE = 16  # max 16 bytes
 SECRET = "1234567812345678123456781234567812345678123456781234567812345678"  # max 64 bytes
+PADDING = " "  ## Max. one character. Shouldn't be a common character or full stop
+KEY_SPLIT = " "
+
+
+class EncodeError(Exception):
+    def __init__(self, reason, content=None):
+        self.reason = reason
+        self.content = content
+        super().__init__(self.reason)
+
+    def __str__(self):
+        if self.content:
+            return f"Encoding error: {self.reason} -> {self.content}"
+        else:
+            return f"Encoding error: {self.reason}"
 
 
 def parse_keys(ks):
-    return ks.split(" ")
+    return ks.split(KEY_SPLIT)
 
 
+"""
+@brief Splits a string into two equal parts.
+If length is not equal -> add one padding character to end of second string
+
+@param data, String with length >= 2
+
+@return list, Contains two equal sized strings
+"""
 def split(data):
+    if type(data) != str:
+        raise EncodeError("Data must be a string", data)
+    elif len(data) < 2:
+        raise EncodeError("Cannot split string with length < 2", data)
+
     halfLen = len(data) // 2
 
-    # Split into two blocks
-    left = data[0:halfLen]
-    right  = data[halfLen:]
+    if len(data) % 2 == 0:
+        left = data[0:halfLen]
+        right = data[halfLen:]
+    else:
+        left = data[0:halfLen + 1]
+        right = data[halfLen + 1:]
+        right += PADDING
 
     return [left, right]
 
 
 """
-Encodes string using blake2b()
+@brief Encodes string using blake2b()
 
-s = string
-k = key
+@param s, "String" String larger than 0
+@param k, "Key" String larger than 0 and less than 64
 
-Returns hash
-"""
-
-"""
->>> from Crypto.Cipher import AES
->>> from Crypto import Random
->>>
->>> key = b'Sixteen byte key'
->>> iv = Random.new().read(AES.block_size)
->>> cipher = AES.new(key, AES.MODE_CFB, iv)
->>> msg = iv + cipher.encrypt(b'Attack at dawn')
+@return Hashed String with the same length as s
 """
 def encode_function(s, k):
-    if len(k) > 64:
-        print("Error encoding function: key length > 64 bytes")
-        exit()
+    if 0 >= len(k) > 64:
+        raise EncodeError("Length of key must be between 1 and 64", k)
 
-    if len(s) < 1:
-        print("Error encoding function: string length < 1 byte")
-        exit()
+    if len(s) <= 0:
+        raise EncodeError("Length of string must be greater than 0", s)
 
     result = ""  ## String after encoding/decoding
 
     # Split into BLOCK_SIZE'd blocks
     data = split_blocks(s, BLOCK_SIZE)
-    data[-1] = pad_block(data[-1], BLOCK_SIZE, " ")
+    data[-1] = pad_block(data[-1], BLOCK_SIZE, PADDING)
 
     # Ensure: 0 < key length < 64 (bytes)
     key = k.encode()
     for block in data:
         # Enure: block length == 64 bytes
         b_data = block.encode()  ## block data in byte format
-
         b_salt = create_salt(b_data)
-
         h = blake2b(key=key, salt=b_salt, digest_size=BLOCK_SIZE)
         h.update(b_data)
-
-        result += str(h.digest())  # hexdigest()?
+        result += str(h.digest())
 
     return result
 
 
 """
-Create salt using SECRET key and a string.
+@brief Create salt using encoded SECRET key and a given bytestring.
+
+@param s, "string" Bytestring with length BLOCK_SIZE
+
+@return Hash string with size SALT_SIZE
 """
 def create_salt(s):
-    if len(s) != 64:
-        print("Error creating salt: string != 64 bytes")
-        exit()
-    if 0 >= len(SECRET) > 64:
-        print("Error creating salt: length of SECRET must larger than 0 and "
-              "less than 64")
-        exit()
-    salt = blake2b(key=SECRET.encode(), digest_size=16)
+    if len(s) != BLOCK_SIZE:
+        raise EncodeError(f"String must be exactly {BLOCK_SIZE} bytes", s)
+    if 0 >= len(SECRET) > BLOCK_SIZE:
+        # CAUTION should SECRET be printed?
+        raise EncodeError(f"Length of SECRET must be between 1 and {BLOCK_SIZE}", SECRET)
+
+    salt = blake2b(key=SECRET.encode(), digest_size=SALT_SIZE)
     salt.update(s)
     salt = salt.digest()
     return salt
 
 
 """
-Splits string into blocks of size n
+@brief Splits string into blocks of size n
+
+@param s, "String" String to split into blocks with size > 1
+@param n, "Number of bytes" Int representing max. block size
+
+@return List containing blocks
 """
 def split_blocks(s, n):
-    return [s[i: i + n] for i in range(0, len(s), n)]
+    if len(s) < 1:
+        raise EncodeError("Cannot split an empty block", s)
+    elif n < 1:
+        raise EncodeError("Must split blocks into 1 or more", n)
+
+    if len(s) < n:
+        return [s]
+
+    result = []
+    for i in range(0, len(s), n):
+        r = s[i:i + n]
+        result += [r]
+    return result
 
 
 """
-Pads string b with character c to size n
+@brief Pads string a string to a larger size using given padding
+
+@param b, "Block" String to up-size
+@param n, "Bytes" Int number of bytes new string should contain (n > len(b))
+@param c, "Character" String to pad remaining spaces
+
+@return String with length n (b || [c]^n)
 """
 def pad_block(b, n, c):
+    # Check c?
     last_block_size = len(b)
-    if last_block_size != n:
-        for i in range(last_block_size + 1, n):
+    if last_block_size == n:
+        return b
+    elif last_block_size > n:
+        raise EncodeError("Block larger than padding length", b)
+    elif last_block_size <= 0:
+        raise EncodeError("Block empty", b)
+    elif last_block_size < n:
+        for i in range(last_block_size + 1, n + 1):
             b += c
     return b
-
 
 
 """
 XOR's two strings together.
 
-Returns a string
+@param s1, "String 1"
+@param s2, "String 2"
+
+@return String
 """
 def xor_string(s1, s2):
     return ''.join(chr(ord(a) ^ ord(b)) for a, b in zip(s1, s2))
 
 
 """
-Use of Feistel Cipher algorithm to encode cipher.
+@brief Use of Feistel Cipher algorithm to encode cipher.
 
-Rough algorithm sketch:
-    (l || r) = m
-    l[i+1] = r[i]
-    r[i+1] = l[i] XOR F(r[i], k[i])
+@param data, String to be encoded
+@param keys, List of keys for hash function
 
-data = string to be encoded
-keys = list of keys for hash function
-
-Returns cipher string.
+@return String containing cipher where 
+(len(cipher) == len(data) or len(data) + 1)
 """
 def encode(data, keys):
     s = split(data)  ## Split cleartext into two equal size pieces
@@ -144,20 +193,23 @@ def encode(data, keys):
         s[0] = xor_string(s[0], f)
         s[0], s[1] = s[1], s[0]
 
-    if DEBUG:
-        print(s[1] + s[0])
+    cipher = s[1] + s[0]
 
-    return s[1] + s[0]
+    if DEBUG:
+        print(cipher)
+
+    return cipher
 
 
 """
-Use of Feistel Cipher algorithm to decode cipher.
-Same as encode(), but keys are reversed.
+@brief Use of Feistel Cipher algorithm to decode cipher.
+Similar to encode function, but keys are reversed.
 
-data = hash string to be decoded
-keys = list of keys for hash function
+@param data, String hash to be decoded
+@param keys, List of keys for hash function
 
-Returns decoded cipher as string.
+@return String containing decoded cipher where 
+(len(original_cleartext) == len(decoded_cipher))
 """
 def decode(data, keys):
     s = split(data)  ## Split cipher into two equal size pieces
@@ -173,33 +225,34 @@ def decode(data, keys):
         s[0] = xor_string(s[0], f)
         s[0], s[1] = s[1], s[0]
 
-    return s[1] + s[0]
+    cleartext = s[1] + s[0]
+
+    # If cleartext ends with a space, it was unbalanced before: Remove padding
+    if cleartext[-1] == PADDING:
+        cleartext = cleartext[:-1]
+
+    return cleartext
 
 
 """
-Open a file and read the text.
-If the length of text inside is odd, append a space to the data, and then 
-return the data.
+@brief Opens a file and returns the text.
+
+@param f_path, "File path" String containing where <source>.txt is located
+
+@return String containing <source>.txt contents
 """
-def get_cleartext(f_path):
+def get_source_txt(f_path):
     file = open(f_path, "r")
-
-    data = file.read().replace('\n', ' ')
+    data = file.read()
     file.close()
-
-    # Temp fix to even string
-    if len(data) % 2 != 0:
-        data += ' '
-
     return data
 
 
 """
-Writes data to a file.
-Handles overwriting an existing file.
+@brief Writes data to a file and handles overwriting an existing file.
 
-f_path = path to file to be written to
-data = data to be written to file
+@param f_path, "File path" String containing where <destination>.txt is located
+@param data, String containing data to be written to <destination>.txt
 """
 def set_textfile(f_path, data):
 
@@ -219,52 +272,18 @@ def set_textfile(f_path, data):
 
 
 """
-Create or open a file and overwrite the contents with clear text.
-"""
-def set_cleartext(f_path, data):
-    set_textfile(f_path, data)
+Handles program arguments and exits program.
 
-
-"""
-Open a file and return the text.
-"""
-def get_ciphertext(f_path):
-    file = open(f_path, "r")
-    data = file.read()
-    file.close()
-    # Reverse temp fix to even string?
-    return data
-
-
-"""
-Create or open a file and overwrite the contents with ciphertext.
-"""
-def set_ciphertext(f_path, data):
-    set_textfile(f_path, data)
-
-
-"""
-Open a file and return the text.
-
-Returns list of keys
-"""
-def get_ksrc(kPath):
-    file = open(kPath, "r")
-    keys = file.read().splitlines()
-    file.close()
-    return keys
-
-
-"""
-Handles incorrect input and exits program.
+@param reason, String containing reason for error
 """
 def usage_error(reason):
     print(reason)
     usage()
     exit(1)
 
+
 """
-Displays correct way to use input for program
+Prints correct way to input arguments for program.
 """
 def usage():
     # print("Usage: feistel-cipher.py -[e|d] <file.txt> -s")
@@ -274,6 +293,10 @@ def usage():
           "--dst"
           "-h --help")
 
+
+"""
+Prints help message containing instructions for program.
+"""
 def help():
     print("HELP PLACEHOLDER")
 
@@ -326,7 +349,8 @@ if __name__ == '__main__':
     # Get keys
     keys = ''
     if kPath:
-        keys = get_ksrc(kPath)
+        keys = get_source_txt(kPath)
+        keys = keys.splitlines()
     elif kSrc:
         keys = parse_keys(kSrc)
     else:
@@ -336,25 +360,24 @@ if __name__ == '__main__':
     if ePath:
         if ePath[-4:] != ".txt":
             usage_error(f'file: {ePath} must be a .txt file')
-        eSrc = get_cleartext(ePath)
+        eSrc = get_source_txt(ePath)
 
     if eSrc:
         cipher = encode(eSrc, keys)
         print(cipher)
         if dst:
-            set_ciphertext(dst, cipher)
+            set_textfile(dst, cipher)
             exit()
 
     if dPath:
         if dPath[-4:] != ".txt":
             usage_error(f'file: {dPath} must be a .txt file')
-        dSrc = get_ciphertext(dPath)
+        dSrc = get_source_txt(dPath)
 
     if dSrc:
         cleartext = decode(dSrc, keys)
         print(cleartext)
         if dst:
-            set_cleartext(dst, cleartext)
+            set_textfile(dst, cleartext)
             exit()
-
     exit()

@@ -9,6 +9,8 @@
 Encodes and decodes source.txt files using Feistel Cipher algorithm and 
 BLAKE2b hash function and saves result into desination.txt
 
+Change SECRET key!
+
 ### Keys
 - Max. length = 64 bytes
 - Multiple keys seperated by space " "
@@ -19,3 +21,4 @@ BLAKE2b hash function and saves result into desination.txt
 ## Todo
 - check key < 64 bytes
 - Error handling for file opening
+- check valid input text (ascii)
